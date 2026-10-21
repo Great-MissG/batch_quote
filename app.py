@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import os
 
 import streamlit as st
-from quote_service import QuoteError, read_upload, request_quote, export_results, display_fields
+from quote_service import QuoteError, read_upload, request_quote, export_results
 
 ROOT = Path(__file__).resolve().parent
 st.set_page_config(page_title='Fmile 批量询价', page_icon='🚚', layout='wide')
@@ -84,13 +84,6 @@ st.subheader('上传检查')
 st.write(f'共 {len(all_rows)} 票，其中 {len(shipments)} 票可询价，{len(validation_errors)} 票需修正。')
 if not all_rows:
     st.warning('表格只有表头，请填写数据后重新上传。')
-preview = [{'Excel行': s.row, '提货邮编': s.origin, '收货邮编': s.destination,
-    '托盘数量': s.units, '尺寸（inch）': f'{s.length:g} × {s.width:g} × {s.height:g}', '整票重量（lbs）': s.total_weight} for s in shipments]
-if preview:
-    show_table(preview)
-if validation_errors:
-    st.error('以下行未提交接口，请修改源文件后重新上传。')
-    show_table([{'Excel行': r, '问题': e} for r, e in validation_errors.items()])
 
 pending = [s for s in shipments if s.row not in st.session_state.results]
 label = '开始询价' if not st.session_state.results else '继续询价 / 重试失败行'
@@ -115,20 +108,11 @@ errors = {**validation_errors, **st.session_state.api_errors}
 if results or errors:
     st.subheader('询价结果')
     st.caption(f'已成功 {len(results)} 票；失败或待修正 {len(errors)} 票。结果只保存在当前浏览器会话中。')
-    result_rows = []
-    for row in all_rows:
-        if row in errors:
-            result_rows.append({'Excel行': row, '状态': errors[row]})
-        elif row in results:
-            for rank, option in enumerate(results[row]['options'], 1):
-                price, insurance, carrier, timing = display_fields(option)
-                result_rows.append({'Excel行': row, '排名': rank, '报价（USD）': price, '卡司': carrier,
-                    '是否包含保险': insurance, '预估时效': timing, '询价编号': results[row]['quoteNo']})
-        else:
-            result_rows.append({'Excel行': row, '状态': '尚未询价'})
-    show_table(result_rows)
     incomplete = {s.row: '尚未询价' for s in shipments if s.row not in results and s.row not in errors}
     output = export_results(content, results, {**errors, **incomplete})
     st.download_button('下载询价结果 Excel', output, f'{Path(upload.name).stem}_询价结果.xlsx',
         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', type='primary')
     st.caption('不足4家时其余报价留空；失败行在首组报价中标注原因，原始输入保留。')
+    if errors:
+        with st.expander(f'查看错误明细（{len(errors)}票）', expanded=False):
+            show_table([{'Excel行': row, '问题': message} for row, message in sorted(errors.items())])
