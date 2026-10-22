@@ -147,7 +147,7 @@ def request_quote(shipment, pickup_date, token, send=post):
     payload = {'originZipCode': shipment.origin, 'destinationZipCode': shipment.destination,
         'originCountryCode': 'US', 'destinationCountryCode': 'US', 'pickupDate': pickup_date,
         'accessorialServices': [], 'items': [{**dims, 'freightClass': str(freight_class),
-        'packagingType': 'Pallet', 'units': shipment.units, 'totalWeight': shipment.total_weight,
+        'packagingType': 'Pallet', 'units': shipment.units, 'pieces': 1, 'totalWeight': shipment.total_weight,
         'isStackable': False, 'isHazardous': False, 'isUsed': False, 'isMachinery': False}]}
     response = send(token, '/quotes', payload)
     if not isinstance(response, dict) or not isinstance(response.get('options'), list):

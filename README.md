@@ -15,6 +15,7 @@
 - 每行一票；同一行的所有托盘尺寸和单托盘重量相同。不同规格请分票；当前模板不支持多规格合票。
 - `units` 为托盘数；`totalWeight` 为托盘数乘单托盘重量。尺寸 inch、重量 lbs，整票必须大于20 lbs。
 - 包装类型明确传 `Pallet`；`isStackable`、`isHazardous`、`isUsed`、`isMachinery` 均显式传布尔值 `false`。
+- `pieces` 固定传整数 `1`；`units` 仍按上传的托盘数量传入。
 - 5位邮编保持不变，ZIP+4仅取前5位；Excel数值邮编不足5位时补前导零。字符串非法邮编拒绝提交。
 - 页面统一选择提货日期；货运等级通过建议等级接口获取。
 - `accessorialServices: []`，接口仍固定加入 APPT。

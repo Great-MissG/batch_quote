@@ -38,6 +38,7 @@ class QuoteTests(unittest.TestCase):
         self.assertEqual(calls[1][1]['originZipCode'], '08859')
         item = calls[1][1]['items'][0]
         self.assertEqual(item['packagingType'], 'Pallet')
+        self.assertEqual(item['pieces'], 1)
         for flag in ['isStackable', 'isHazardous', 'isUsed', 'isMachinery']:
             self.assertIs(item[flag], False)
         self.assertEqual(result['options'][0]['totalAmount'], 99.5)
