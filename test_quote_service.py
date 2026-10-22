@@ -36,6 +36,10 @@ class QuoteTests(unittest.TestCase):
             self.assertEqual(item['totalWeight'], 300)
         self.assertEqual(calls[1][1]['accessorialServices'], [])
         self.assertEqual(calls[1][1]['originZipCode'], '08859')
+        item = calls[1][1]['items'][0]
+        self.assertEqual(item['packagingType'], 'Pallet')
+        for flag in ['isStackable', 'isHazardous', 'isUsed', 'isMachinery']:
+            self.assertIs(item[flag], False)
         self.assertEqual(result['options'][0]['totalAmount'], 99.5)
         for qty in [0, -1, 1.5]:
             with self.assertRaises(ValueError): Shipment.parse(2, [qty, 48, 40, 36, 150, '08859', '10001'])
