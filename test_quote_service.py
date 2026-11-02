@@ -3,7 +3,7 @@ from io import BytesIO
 from pathlib import Path
 import unittest
 import openpyxl
-from quote_service import Shipment, zip5, cheapest_carriers, request_quote, read_upload, export_results, display_fields
+from quote_service import Shipment, QuoteError, zip5, cheapest_carriers, request_quote, read_upload, export_results, display_fields
 
 
 def upload_bytes():
@@ -52,6 +52,26 @@ class QuoteTests(unittest.TestCase):
         self.assertEqual(len(top), 4)
         self.assertEqual(display_fields({'carrierCode': 'A', 'totalAmount': 0, 'platformInsuranceAmount': 0})[1:], ['未明确', 'A', '未提供'])
         self.assertEqual(display_fields({'carrierCode': 'A', 'totalAmount': 10, 'transitDays': 0})[3], '预计0天')
+
+    def test_selected_services_and_optional_appt(self):
+        shipment = Shipment.parse(2, [1, 48, 40, 36, 150, '08859', '10001'])
+        calls = []
+        def send(token, endpoint, payload):
+            calls.append((endpoint, payload))
+            if endpoint.endswith('suggested-class'):
+                return {'suggestedClass': '100'}
+            return {'options': [{'carrierCode': 'A', 'totalAmount': 100}]}
+        request_quote(shipment, '2026-11-03', 'test-only', send,
+            service_codes=['LGPU', 'RESDEL', 'APPT', 'ROC', 'LGPU'])
+        self.assertEqual(calls[-1][1]['accessorialServices'],
+            [{'code': c} for c in ['LGPU', 'RESDEL', 'APPT', 'ROC']])
+        request_quote(shipment, '2026-11-03', 'test-only', send, service_codes=['LGDEL'])
+        self.assertEqual(calls[-1][1]['accessorialServices'], [{'code': 'LGDEL'}])
+        before = len(calls)
+        for codes in [['ROC', 'WGD'], ['INVALID']]:
+            with self.assertRaises(QuoteError):
+                request_quote(shipment, '2026-11-03', 'test-only', send, service_codes=codes)
+        self.assertEqual(len(calls), before)
 
     def test_template_export_and_failure(self):
         data = upload_bytes()

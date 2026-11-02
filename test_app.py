@@ -28,6 +28,30 @@ class AppTests(unittest.TestCase):
             app.run(timeout=20)
             self.assertEqual(request.call_count, 1)
 
+    def test_services_reach_request_and_invalidate_old_results(self):
+        upload = BytesIO(upload_bytes())
+        upload.name = '测试模板.xlsx'
+        answer = {'options': [{'carrierCode': 'TEST', 'totalAmount': 100}], 'quoteNo': 'TEST'}
+        with patch.dict(os.environ, {'FIMILE_API_TOKEN': 'test-only'}), patch('streamlit.file_uploader', return_value=upload), patch('quote_service.request_quote', return_value=answer) as request:
+            app = AppTest.from_file('app.py').run(timeout=20)
+            self.assertTrue(all(not c.value for c in app.checkbox))
+            app.button[0].click().run(timeout=20)
+            self.assertEqual(request.call_args.kwargs['service_codes'], [])
+            app.checkbox(key='service_LGPU').check().run(timeout=20)
+            self.assertEqual(app.session_state['results'], {})
+            self.assertFalse(app.button[0].disabled)
+            self.assertEqual(request.call_count, 1)
+            app.checkbox(key='service_RESDEL').check().run(timeout=20)
+            app.checkbox(key='service_APPT').check().run(timeout=20)
+            app.selectbox[0].select('ROC').run(timeout=20)
+            app.button[0].click().run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertEqual(request.call_args.kwargs['service_codes'], ['LGPU', 'RESDEL', 'APPT', 'ROC'])
+            app.checkbox(key='service_APPT').uncheck().run(timeout=20)
+            self.assertEqual(app.session_state['results'], {})
+            app.button[0].click().run(timeout=20)
+            self.assertNotIn('APPT', request.call_args.kwargs['service_codes'])
+
 
 if __name__ == '__main__':
     unittest.main()

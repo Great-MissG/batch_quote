@@ -16,6 +16,10 @@ INPUT_HEADERS = ['托盘数量', '长（inch）', '宽（inch）', '高（inch�
 OUTPUT_HEADERS = [label for i in range(1, 5) for label in [f'报价{i}', '是否包含保险', '选择卡司' if i == 1 else f'选择卡司{i}', '预估时效']]
 HEADERS = INPUT_HEADERS + OUTPUT_HEADERS
 API_BASE = 'https://oms.fimile.com/oms-manager/api/ltl'
+PICKUP_SERVICES = {'LGPU': '提货尾板', 'RESPU': '住宅提货', 'LTDPU': '受限地点提货'}
+DELIVERY_SERVICES = {'LGDEL': '送货尾板', 'RESDEL': '住宅送货', 'APPT': '预约送货（APPT）'}
+OTHER_DELIVERY_SERVICES = {'NOTIFY': '通知收货人', 'LTDDEL': '受限地点送货',
+    'ROC': '选择房间配送', 'WGD': '白手套服务', 'ASSY': '组装服务'}
 
 
 class QuoteError(Exception):
@@ -136,7 +140,13 @@ def cheapest_carriers(options):
     return sorted(carriers.values(), key=lambda o: o['totalAmount'])[:4]
 
 
-def request_quote(shipment, pickup_date, token, send=post):
+def request_quote(shipment, pickup_date, token, send=post, *, service_codes=()):
+    codes = list(dict.fromkeys(service_codes))
+    allowed = PICKUP_SERVICES.keys() | DELIVERY_SERVICES.keys() | OTHER_DELIVERY_SERVICES.keys()
+    if any(code not in allowed for code in codes):
+        raise QuoteError('包含不支持的提货或送货服务')
+    if sum(code in OTHER_DELIVERY_SERVICES for code in codes) > 1:
+        raise QuoteError('其他送货服务最多选择一项')
     dims = {'length': shipment.length, 'width': shipment.width, 'height': shipment.height}
     suggested = send(token, '/quotes/suggested-class', {**dims, 'totalWeight': shipment.total_weight, 'units': shipment.units})
     if not isinstance(suggested, dict):
@@ -146,7 +156,7 @@ def request_quote(shipment, pickup_date, token, send=post):
         raise QuoteError('接口未返回建议货运等级')
     payload = {'originZipCode': shipment.origin, 'destinationZipCode': shipment.destination,
         'originCountryCode': 'US', 'destinationCountryCode': 'US', 'pickupDate': pickup_date,
-        'accessorialServices': [], 'items': [{**dims, 'freightClass': str(freight_class),
+        'accessorialServices': [{'code': code} for code in codes], 'items': [{**dims, 'freightClass': str(freight_class),
         'packagingType': 'Pallet', 'units': shipment.units, 'pieces': 1, 'totalWeight': shipment.total_weight,
         'isStackable': False, 'isHazardous': False, 'isUsed': False, 'isMachinery': False}]}
     response = send(token, '/quotes', payload)

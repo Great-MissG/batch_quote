@@ -4,9 +4,11 @@ from html import escape
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import os
+import json
 
 import streamlit as st
-from quote_service import QuoteError, read_upload, request_quote, export_results
+from quote_service import (QuoteError, read_upload, request_quote, export_results,
+    PICKUP_SERVICES, DELIVERY_SERVICES, OTHER_DELIVERY_SERVICES)
 
 ROOT = Path(__file__).resolve().parent
 st.set_page_config(page_title='Fmile 批量询价', page_icon='🚚', layout='wide')
@@ -57,8 +59,28 @@ with st.sidebar:
     st.write('**报价规则**')
     st.caption('接口原价 · USD · 最低4家不同卡司')
     st.caption('单托盘尺寸：inch；单托盘重量：lbs。总重量按托盘数相乘。')
-    st.caption('不添加可选附加服务。Fmile 服务端仍固定加入预约送货 APPT。')
+    st.caption('附加服务按页面勾选提交，适用于整批路线。')
     st.caption('保险无明确承保状态时显示“未明确”，时效缺失显示“未提供”。')
+
+st.subheader('提货和送货服务')
+st.caption('所有选项默认不勾选，本次上传的全部路线共用以下设置。')
+service_codes = []
+pickup_column, delivery_column = st.columns(2)
+with pickup_column:
+    st.write('**提货服务**')
+    for code, label in PICKUP_SERVICES.items():
+        if st.checkbox(label, key=f'service_{code}'):
+            service_codes.append(code)
+with delivery_column:
+    st.write('**送货服务**')
+    for code, label in DELIVERY_SERVICES.items():
+        if st.checkbox(label, key=f'service_{code}'):
+            service_codes.append(code)
+    extra_service = st.selectbox('其他送货服务（最多一项）', ['', *OTHER_DELIVERY_SERVICES],
+        format_func=lambda code: OTHER_DELIVERY_SERVICES.get(code, '无'), key='extra_delivery_service')
+    if extra_service:
+        service_codes.append(extra_service)
+st.caption('APPT 未勾选时不主动提交；当前接口文档仍说明服务端会自动补入 APPT。')
 
 token = setting('FIMILE_API_TOKEN')
 if not token:
@@ -76,7 +98,7 @@ except ValueError as exc:
     st.error(str(exc))
     st.stop()
 
-batch_key = sha256(content + pickup.isoformat().encode()).hexdigest()
+batch_key = sha256(content + json.dumps([pickup.isoformat(), service_codes]).encode()).hexdigest()
 if st.session_state.get('batch_key') != batch_key:
     st.session_state.update(batch_key=batch_key, results={}, api_errors={})
 all_rows = sorted([s.row for s in shipments] + list(validation_errors))
@@ -92,7 +114,7 @@ if st.button(label, type='primary', disabled=not token or not pending, key='quot
     for i, shipment in enumerate(pending):
         progress.progress(i / len(pending), text=f'正在询价第 {i + 1}/{len(pending)} 票（Excel第{shipment.row}行）')
         try:
-            result = request_quote(shipment, pickup.isoformat(), token)
+            result = request_quote(shipment, pickup.isoformat(), token, service_codes=service_codes)
             st.session_state.results[shipment.row] = result
             st.session_state.api_errors.pop(shipment.row, None)
         except QuoteError as exc:
