@@ -82,18 +82,18 @@ class QuoteTests(unittest.TestCase):
         output = export_results(data, result, errors)
         check = openpyxl.load_workbook(BytesIO(output))
         sh = check.active
-        self.assertEqual(sh.max_column, 23)
-        self.assertEqual(sh['H2'].value, 123.45)
-        self.assertEqual(sh['J2'].data_type, 's')
-        self.assertEqual(sh['I2'].value, '未明确')
-        self.assertIsNone(sh['L2'].value)
-        self.assertEqual(sh['H3'].value, '询价失败')
+        self.assertEqual(sh.max_column, 24)
+        self.assertEqual(sh['I2'].value, 123.45)
+        self.assertEqual(sh['K2'].data_type, 's')
+        self.assertEqual(sh['J2'].value, '未明确')
+        self.assertIsNone(sh['M2'].value)
+        self.assertEqual(sh['I3'].value, '询价失败')
         self.assertEqual(sh['F2'].value, '08859-1234')
         self.assertEqual([c.value for c in sh[1]], [c.value for c in wb.active[1]])
 
-    def test_upload_with_only_seven_input_columns(self):
+    def test_upload_with_only_eight_input_columns(self):
         wb = openpyxl.load_workbook(BytesIO(upload_bytes()))
-        wb.active.delete_cols(8, 16)
+        wb.active.delete_cols(9, 16)
         stream = BytesIO()
         wb.save(stream)
         content = stream.getvalue()
@@ -102,10 +102,48 @@ class QuoteTests(unittest.TestCase):
         self.assertIn(3, errors)
         output = export_results(content, {}, {})
         result = openpyxl.load_workbook(BytesIO(output)).active
-        self.assertEqual(result.max_column, 23)
+        self.assertEqual(result.max_column, 24)
         from quote_service import HEADERS
         self.assertEqual([c.value for c in result[1]], HEADERS)
         self.assertEqual(result['F2'].value, '08859-1234')
+
+    def test_class_override_and_blank_fallback(self):
+        wb = openpyxl.load_workbook(BytesIO(upload_bytes()))
+        sh = wb.active
+        sh['H2'] = 92.5
+        sh['I2'] = 999  # Previous results must not be read as class or retained.
+        sh.append([1, 48, 40, 36, 150, '08859', '10001', ' '])
+        sh.append([1, 48, 40, 36, 150, '08859', '10001', ' 100.0 '])
+        for value in [0, -1, 'bad', True, 'NaN', '=1+1']:
+            sh.append([1, 48, 40, 36, 150, '08859', '10001', value])
+        stream = BytesIO()
+        wb.save(stream)
+        content = stream.getvalue()
+        _, shipments, errors = read_upload(content)
+        self.assertEqual([s.freight_class for s in shipments], ['92.5', None, '100'])
+        self.assertEqual(len(errors), 7)
+        calls = []
+        def send(token, endpoint, payload):
+            calls.append((endpoint, payload))
+            if endpoint.endswith('suggested-class'):
+                return {'suggestedClass': '125'}
+            return {'options': [{'carrierCode': 'A', 'totalAmount': 100}]}
+        for shipment, expected in zip(shipments, ['92.5', '125', '100']):
+            result = request_quote(shipment, '2026-11-06', 'test-only', send)
+            self.assertEqual(result['freightClass'], expected)
+            self.assertEqual(calls[-1][1]['items'][0]['freightClass'], expected)
+        self.assertEqual([endpoint for endpoint, _ in calls],
+            ['/quotes', '/quotes/suggested-class', '/quotes', '/quotes'])
+        result = openpyxl.load_workbook(BytesIO(export_results(content, {}, errors))).active
+        self.assertEqual(result['H2'].value, 92.5)
+        self.assertIsNone(result['I2'].value)
+        self.assertEqual(result['I3'].value, '询价失败')
+        self.assertEqual(result['F2'].value, '08859-1234')
+        sh.delete_cols(8)
+        stream = BytesIO()
+        wb.save(stream)
+        with self.assertRaisesRegex(ValueError, 'H列应为“class”'):
+            read_upload(stream.getvalue())
 
 
 if __name__ == '__main__':

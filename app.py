@@ -89,7 +89,7 @@ st.download_button('下载空白模板', (ROOT / '询价模板.xlsx').read_bytes
     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 upload = st.file_uploader('上传询价模板（.xlsx）', type=['xlsx'], help='每行一票，同一行的托盘尺寸和单托盘重量应相同。最多500票、10 MB。')
 if upload is None:
-    st.info('上传只需 A–G 输入列，H–W 报价结果列由系统自动补齐。')
+    st.info('上传需包含 A–H 输入列；H 列 class 填写时按该等级询价，留空时自动计算。I–X 报价结果列由系统自动补齐。')
     st.stop()
 content = upload.getvalue()
 try:
