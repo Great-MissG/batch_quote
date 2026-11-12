@@ -49,7 +49,7 @@ def setting(name):
 
 
 st.title('Fmile 批量询价')
-st.write('上传托盘询价表，比较最低的 4 家卡司，下载回填结果。')
+st.write('上传托盘/箱装询价表，比较最低的 4 家卡司，下载回填结果。')
 with st.sidebar:
     st.subheader('询价设置')
     today = datetime.now(ZoneInfo('America/Los_Angeles')).date()
@@ -58,7 +58,7 @@ with st.sidebar:
     st.divider()
     st.write('**报价规则**')
     st.caption('接口原价 · USD · 最低4家不同卡司')
-    st.caption('单托盘尺寸：inch；单托盘重量：lbs。总重量按托盘数相乘。')
+    st.caption('单一托盘/箱尺寸：inch；重量：lbs。总重量按数量乘单一托盘/箱重量。')
     st.caption('附加服务按页面勾选提交，适用于整批路线。')
     st.caption('保险无明确承保状态时显示“未明确”，时效缺失显示“未提供”。')
 
@@ -87,9 +87,9 @@ if not token:
     st.warning('尚未配置服务端 FIMILE_API_TOKEN。配置后即可询价。')
 st.download_button('下载空白模板', (ROOT / '询价模板.xlsx').read_bytes(), '询价模板.xlsx',
     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-upload = st.file_uploader('上传询价模板（.xlsx）', type=['xlsx'], help='每行一票，同一行的托盘尺寸和单托盘重量应相同。最多500票、10 MB。')
+upload = st.file_uploader('上传询价模板（.xlsx）', type=['xlsx'], help='每行一票，同一行的包装类型、尺寸和单件重量应相同。包装类型填写 pallet 或 box。最多500票、10 MB。')
 if upload is None:
-    st.info('上传需包含 A–H 输入列；H 列 class 填写时按该等级询价，留空时自动计算。I–X 报价结果列由系统自动补齐。')
+    st.info('上传需包含 A–I 输入列；H 列 class 可留空自动计算，I 列包装类型填写 pallet 或 box。J–Y 报价结果列由系统自动补齐。')
     st.stop()
 content = upload.getvalue()
 try:

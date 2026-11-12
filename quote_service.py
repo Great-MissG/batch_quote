@@ -12,7 +12,7 @@ import urllib.request
 
 import openpyxl
 
-INPUT_HEADERS = ['托盘数量', '长（inch）', '宽（inch）', '高（inch）', '单一托盘重量（lbs）', '提货邮编', '收货邮编', 'class']
+INPUT_HEADERS = ['托盘/箱数量', '长（inch）', '宽（inch）', '高（inch）', '单一托盘/箱重量', '提货邮编', '收货邮编', 'class', '包装类型']
 OUTPUT_HEADERS = [label for i in range(1, 5) for label in [f'报价{i}', '是否包含保险', '选择卡司' if i == 1 else f'选择卡司{i}', '预估时效']]
 HEADERS = INPUT_HEADERS + OUTPUT_HEADERS
 API_BASE = 'https://oms.fimile.com/oms-manager/api/ltl'
@@ -62,21 +62,25 @@ class Shipment:
     origin: str
     destination: str
     freight_class: str | None = None
+    packaging_type: str = 'Pallet'
 
     @classmethod
     def parse(cls, row, values):
-        qty = positive(values[0], '托盘数量')
+        qty = positive(values[0], '托盘/箱数量')
         if qty != qty.to_integral_value():
-            raise ValueError('托盘数量必须为整数')
+            raise ValueError('托盘/箱数量必须为整数')
         dimensions = [float(positive(values[i], INPUT_HEADERS[i])) for i in range(1, 4)]
         weight = float((qty * positive(values[4], INPUT_HEADERS[4])).quantize(Decimal('0.01')))
         if not all(math.isfinite(v) for v in [*dimensions, weight]):
             raise ValueError('尺寸或重量数值过大')
         if weight <= 20:
             raise ValueError('整票总重量必须大于20 lbs')
-        value = values[7] if len(values) > 7 else None
+        packaging_type = {'pallet': 'Pallet', 'box': 'Box'}.get(str(values[8] or '').strip().lower())
+        if packaging_type is None:
+            raise ValueError('包装类型必填，只能是 pallet 或 box')
+        value = values[7]
         freight_class = None if value is None or str(value).strip() == '' else format(positive(value, 'class').normalize(), 'f')
-        return cls(row, int(qty), *dimensions, weight, zip5(values[5]), zip5(values[6]), freight_class)
+        return cls(row, int(qty), *dimensions, weight, zip5(values[5]), zip5(values[6]), freight_class, packaging_type)
 
 
 def read_upload(content):
@@ -92,13 +96,13 @@ def read_upload(content):
         if str(actual or '').strip().lstrip('\ufeff') != expected:
             letter = openpyxl.utils.get_column_letter(col)
             raise ValueError(f'{letter}列应为“{expected}”，实际为“{actual or "空白"}”')
-    for col, expected in enumerate(OUTPUT_HEADERS, 9):
+    for col, expected in enumerate(OUTPUT_HEADERS, 10):
         actual = sh.cell(1, col).value
         if actual is not None and str(actual).strip() not in ('', expected):
             letter = openpyxl.utils.get_column_letter(col)
             raise ValueError(f'{letter}列是结果区域，应为空白或“{expected}”，实际为“{actual}”')
     shipments, errors = [], {}
-    for n, row in enumerate(sh.iter_rows(min_row=2, max_col=8, values_only=True), 2):
+    for n, row in enumerate(sh.iter_rows(min_row=2, max_col=9, values_only=True), 2):
         if all(v is None or str(v).strip() == '' for v in row):
             continue
         try:
@@ -162,7 +166,7 @@ def request_quote(shipment, pickup_date, token, send=post, *, service_codes=()):
     payload = {'originZipCode': shipment.origin, 'destinationZipCode': shipment.destination,
         'originCountryCode': 'US', 'destinationCountryCode': 'US', 'pickupDate': pickup_date,
         'accessorialServices': [{'code': code} for code in codes], 'items': [{**dims, 'freightClass': str(freight_class),
-        'packagingType': 'Pallet', 'units': shipment.units, 'pieces': 1, 'totalWeight': shipment.total_weight,
+        'packagingType': shipment.packaging_type, 'units': shipment.units, 'pieces': 1, 'totalWeight': shipment.total_weight,
         'isStackable': False, 'isHazardous': False, 'isUsed': False, 'isMachinery': False}]}
     response = send(token, '/quotes', payload)
     if not isinstance(response, dict) or not isinstance(response.get('options'), list):
@@ -188,17 +192,17 @@ def export_results(content, results, errors):
     wb, _, _ = read_upload(content)
     sh = wb.worksheets[0]
     template = openpyxl.load_workbook(Path(__file__).parent / '询价模板.xlsx')
-    for col, label in enumerate(OUTPUT_HEADERS, 9):
+    for col, label in enumerate(OUTPUT_HEADERS, 10):
         sh.cell(1, col, label)._style = copy(template.worksheets[0].cell(1, col)._style)
     sh.row_dimensions[1].height = max(sh.row_dimensions[1].height or 15, 32)
     for row in range(2, sh.max_row + 1):
-        for col in range(9, 25):
+        for col in range(10, 26):
             sh.cell(row, col).value = None
     for row, result in results.items():
         for i, option in enumerate(result['options']):
             for j, value in enumerate(display_fields(option)):
-                cell = sh.cell(row, 9 + 4 * i + j, value)
-                cell._style = copy(sh.cell(2, 9 + 4 * i + j)._style)
+                cell = sh.cell(row, 10 + 4 * i + j, value)
+                cell._style = copy(sh.cell(2, 10 + 4 * i + j)._style)
                 if j == 0:
                     cell.number_format = '"$"#,##0.00'
                 if isinstance(value, str):
@@ -206,14 +210,14 @@ def export_results(content, results, errors):
                 cell.alignment = openpyxl.styles.Alignment(vertical='center', wrap_text=True)
         sh.row_dimensions[row].height = 42
     for row, message in errors.items():
-        sh.cell(row, 9, '询价失败')
-        sh.cell(row, 10, str(message)).data_type = 's'
-        sh.cell(row, 10).alignment = openpyxl.styles.Alignment(wrap_text=True)
+        sh.cell(row, 10, '询价失败')
+        sh.cell(row, 11, str(message)).data_type = 's'
+        sh.cell(row, 11).alignment = openpyxl.styles.Alignment(wrap_text=True)
         sh.row_dimensions[row].height = 42
-    for col in range(9, 25):
+    for col in range(10, 26):
         letter = openpyxl.utils.get_column_letter(col)
-        sh.column_dimensions[letter].width = 30 if (col - 9) % 4 == 3 else 20
-    sh.freeze_panes = 'I2'
+        sh.column_dimensions[letter].width = 30 if (col - 10) % 4 == 3 else 20
+    sh.freeze_panes = 'J2'
     output = BytesIO()
     wb.save(output)
     return output.getvalue()
